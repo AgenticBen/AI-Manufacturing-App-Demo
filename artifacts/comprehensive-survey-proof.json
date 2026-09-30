@@ -1,0 +1,15 @@
+{
+  "fields": 173,
+  "sections": 14,
+  "logo_exact_match": true,
+  "prepared_survey_persisted": true,
+  "requirements_pdf": true,
+  "changed_scope_retained_without_fixture_estimate": true,
+  "quote": "2fe233f2-7fe3-4773-865e-ef18c47f0e22",
+  "custom_quote": "4e4b3bbd-d17a-43aa-a588-3abbcbf94e13",
+  "tested_url": "https://agentic-arc-manufacturing.vercel.app",
+  "deployment": "dpl_GTHQsDi5KLqdEdwzrpE6n38TJ5VV",
+  "commit": "fbd259a",
+  "pdf_pages": 15,
+  "pdf_missing_questions": []
+}

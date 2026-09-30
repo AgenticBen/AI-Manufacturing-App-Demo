@@ -1,0 +1,50 @@
+{
+  "scenario": "feed",
+  "quote": "fead2911-2c79-4333-b6d8-936ecc096f15",
+  "stages": [
+    {
+      "stage": 1,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 2,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 3,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 4,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 5,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 6,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 7,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 8,
+      "locked_before_review": true,
+      "approved_after_review": true
+    }
+  ],
+  "pdfs": 18,
+  "buy_only": true,
+  "no_real_messages": true,
+  "tested_preview": "https://agentic-arc-manufacturing-au9x1vl3r-agenticbens-projects.vercel.app"
+}
