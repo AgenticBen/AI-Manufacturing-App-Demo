@@ -1,0 +1,14 @@
+.venv
+node_modules
+.git
+.env*
+PRD
+/AI Manufacturing Workflow Flowchart.png
+/IMG_8098.jpg
+/WORKFLOW*
+/HOPPER-DEMO-SCOPE.md
+/INTAKE-FLOW.md
+/PRD-DECISIONS.md
+artifacts
+fixtures
+# Runtime assets MUST remain included: public/assets/*.png, backend/assets/*.png and backend/playbooks/*.md.
