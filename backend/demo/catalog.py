@@ -2,12 +2,13 @@
 from backend.fixtures import build, SCENARIOS
 from backend.decision_support import HISTORY
 from backend.calculations import dec, money
+from backend.survey import defaults,requirements
 
 VERSION = '2026.09.30-v2'
 NOTICE = 'Pre-written fictional demo document stored in Supabase. No live provider sync.'
 
 def database(id, title, home, view, rows, note=''):
-    return dict(id=id,title=title,home=home,view=view,version=VERSION,status=NOTICE,path=f'Demo shop/{title}',note=note,rows=[dict(id=f'{id}-{i:03}',line=i,**row) for i,row in enumerate(rows,1)])
+    return dict(id=id,title=title,home=home,view=view,version=VERSION,status=NOTICE,path=f'Demo shop/{title}',note=note,rows=[dict({'id':f'{id}-{i:03}','line':i},**row) for i,row in enumerate(rows,1)])
 
 def seed_databases():
     b=build('seed'); out=[]
@@ -22,7 +23,7 @@ def seed_databases():
     out.append(database('D4','Past projects & completion data','Google Drive','table',[dict(job=j['id'],task='All operations',quoted_hours=j['quoted_hours'],actual_hours=j['actual_hours'],variance_hours=money(dec(j['actual_hours'])-dec(j['quoted_hours'])),notes=j['inspection_note'],basis=j['actual_basis']) for j in HISTORY],'Future completion extraction proposes new records after fulfillment; no extraction is running.'))
     out.append(database('D5','Historical BOM database','Google Drive','table',[dict(job='Template-'+sid,part=x['item'],spec=x['spec'],material=SCENARIOS[sid]['material'],qty_per_assembly=x['per_unit']) for sid in SCENARIOS for x in build(sid)['bom']]))
     out.append(database('D6','Past quotes','Google Drive · Won / Lost / In progress','folders',[dict(quote=j['id'],folder='In progress' if j['id']=='H-303' else j['win_loss'].title(),title='Fictional '+j['scenario']+' hopper quote',quantity=j['quantity'],material=j['material'],terms='Freight and tax excluded. Drawing review required.',price='Historical price unavailable; never use as a current cost.',basis=j['actual_basis']) for j in HISTORY]))
-    out.append(database('D7','Design templates','Google Drive','cards',[dict(design=sid,title=s['capacity']+' hopper concept',material=s['material'],image='/assets/concept-'+sid+'.png',classification='AI concept · not an engineering drawing',review='Structural calculations, welding details and manufacture-ready drawings require qualified engineering.') for sid,s in SCENARIOS.items()]))
+    out.append(database('D7','Design templates','Google Drive','cards',[dict(design=sid,title=s['capacity']+' reference template',material=s['material'],image='/assets/concept-'+sid+'.png',classification='AI concept · not an engineering drawing',scope='Reference image only; controls and powered auxiliaries shown are outside quote scope. Geometry must be reviewed for this configuration.',review='Structural calculations, welding details and manufacture-ready drawings require qualified engineering.') for sid,s in SCENARIOS.items()]))
     out.append(database('D8','Manufacturing process docs','Google Drive','document',[dict(sequence=i,operation=op,machine=machine,note=note) for i,(op,machine,note) in enumerate([('Legs','Saw and weld fixture','Confirm anchored stationary frame.'),('Cone','Cutting table and press brake','Review slope and interface.'),('Body','Press brake and welding cell','Check seams and access.'),('Gate','Assembly bench','Verify flange and bolt pattern.'),('Finish','Finishing cell','Use reviewed material/finish route.'),('Inspect','Dimensional inspection','Inspect adapter alignment before packing.')],1)]))
     material_data=[
         ('Corn / grain dust','Mild','No general corrosion claim','St1; Kst approx. 100–160 per research summary, not a design value',False,'Moisture can cause bridging','Not established','Dust testing and hazard review; confirm flow properties','Dust control and engineering review'),
@@ -35,8 +36,9 @@ def seed_databases():
     out.append(database('D10','CRM','CRM (system unnamed)','records',[dict(scenario=sid,company=s['name'],relationship='Returning client' if sid=='seed' else 'New client',past_jobs='H-101, H-102' if sid=='seed' else 'None confirmed',contact='Fictional purchasing contact; no personal details') for sid,s in SCENARIOS.items()]))
     conversations=[]
     for sid,s in SCENARIOS.items():
-        conversations += [dict(scenario=sid,type='Granola · call transcript',content=s['description']+' '+s['environment']),dict(scenario=sid,type='Gmail · request email',content=f"Please quote {s['quantity']} hopper assemblies; capacity {s['capacity']}. {s['clarification']}"),dict(scenario=sid,type='Web survey',content=f"Handled material: {s['handled']}. Construction: {s['material']}. Outlet: {s['outlet']}."),dict(scenario=sid,type='Gmail · clarification response',content=s['resolution'])]
+        conversations += [dict(scenario=sid,type='Granola · call transcript',content=s['description']+' '+s['environment']),dict(scenario=sid,type='Gmail · request email',content=f"Please quote {s['quantity']} hopper assemblies; capacity {s['capacity']}. {s['clarification']}"),dict(scenario=sid,type='Web survey',content='\n'.join(r['question']+' '+r['value'] for r in requirements(defaults(sid)))),dict(scenario=sid,type='Gmail · clarification response',content=s['resolution'])]
     out.append(database('D11','Conversations','Granola (calls) · Gmail (emails) · web survey','document',conversations))
-    out.append(database('D12','Client document','Google Drive','document',[dict(scenario=sid,company=s['name'],background='Fictional '+s['short']+'; no real company research claimed',requirements=s['description'],environment=s['environment'],gap=s['clarification'],version_history='v1: submitted requirements. v2: after explicit customer-answer confirmation.') for sid,s in SCENARIOS.items()]))
-    out.append(database('D13','Agent instructions','Supabase (real)','playbooks',[dict(name=p.stem,text=p.read_text(),version='1.0') for p in sorted(__import__('pathlib').Path('backend/playbooks').glob('*.md')) if p.stem!='README'],'Exact versioned instructions; prepared examples are not recorded AI runs.'))
+    out.append(database('D12','Client document','Google Drive','document',[dict(scenario=sid,company=s['name'],background='Fictional '+s['short']+'; no real company research claimed',requirements=s['description'],detailed_requirements=[{'question':r['question'],'answer':r['value'],'status':r['status']} for r in requirements(defaults(sid))],environment=s['environment'],gap=s['clarification'],version_history='v1: submitted requirements. v2: after explicit customer-answer confirmation.') for sid,s in SCENARIOS.items()]))
+    from .agents import agent_records
+    out.append(database('D13','Agent instructions','Supabase (real)','playbooks',agent_records(),'Exact versioned instructions; prepared examples are not recorded AI runs.'))
     return out

@@ -62,8 +62,11 @@ def invalidate(q,from_stage,reason):
     event(q,'invalidated',reason)
 
 def create_quote(data):
-    sid=data['scenario']; custom=sid=='custom'
-    if sid in SCENARIOS and (data['description'].strip()!=SCENARIOS[sid]['description'] or data.get('notes','').strip()):
+    from .survey import normalize,defaults,attach
+    submitted_sid=data['scenario'];values=normalize(submitted_sid,data.get('survey'))
+    survey_changed=submitted_sid in SCENARIOS and values!=defaults(submitted_sid)
+    sid=submitted_sid; custom=sid=='custom'
+    if sid in SCENARIOS and (data['description'].strip()!=SCENARIOS[sid]['description'] or data.get('notes','').strip() or survey_changed):
         sid='custom'; custom=True
     require(sid in SCENARIOS or custom,'Unknown scenario')
     qty=dec(data['quantity'],'order quantity',True); require(qty==qty.to_integral() and qty<=12,'Supported quantity is 1–12 assemblies')
@@ -74,7 +77,8 @@ def create_quote(data):
         q['blocker']='Needs live AI / engineering review. No prepared design or estimate matches this request.'
     else:
         q.update(build(sid)); q['blocker']=q['scenario']['clarification']; q['clarification_resolved']=False
-        recalculate(q)
+    attach(q,values,'Prepared fictional example' if not custom else 'Customer / operator input · unverified')
+    if not custom:recalculate(q)
     q['stages']=[{'name':name,'status':'awaiting_review' if i==0 and q['mode']=='guided_demo' else 'waiting_client' if i==0 else 'waiting_input','reason':'','entered_at':now() if i==0 else None,'approved_at':None} for i,name in enumerate(STAGES)]
     if custom: q['stages'][0]['status']='blocked'
     if q['mode']=='live_mcp': q['jobs'].append(new_job(q,0))
@@ -109,10 +113,12 @@ def package(q):
 
 def act(q, action, data, allocations=None):
     """Mutates a copy, then caller persists with version CAS and inventory atomically."""
-    if action in ('open_document','confirm_documents','simulate_email','replay_cost_qa'):
+    if action in ('open_document','confirm_documents','simulate_email','replay_cost_qa','request_correction','insurance_option','draft_material','approve_material'):
         from .workflow import workflow_action
         return workflow_action(q,action,data)
     q=deepcopy(q); inventory_action=None; reserve_lines=[]
+    from .survey import ensure_survey
+    ensure_survey(q)
     require(action in ['inspect','verify','resolve','approve','reject_stage','revise','reserve','release','refresh','risk_first','risk_reconcile','risk_dispose','pricing','preview','export','respond','acceptance_check','approve_procurement','expire','attach_source','route_choice','route_override','reject_substitution'],'Unknown action')
     if q['lifecycle'] in ('accepted','rejected','expired'):
         require(action in ['inspect','acceptance_check','approve_procurement','export'],'This response is final; preserve the issued revision. Start a new request for changed scope.')
@@ -134,7 +140,8 @@ def act(q, action, data, allocations=None):
         q['clarification_resolved']=True; q['blocker']=None
         for r in q['risks']:
             if r['id']=='engineering': r['disposition']='resolved'; r['resolved_at']=now()
-        for r in q['requirements']: r['status']='confirmed'
+        for r in q['requirements']:
+            if not r.get('section'):r['status']='confirmed'
         if q['mode']=='live_mcp': invalidate(q,1,'Human clarified baseline; live proposal inputs refreshed')
         event(q,'clarification_resolved',q['scenario']['resolution'])
     elif action=='approve':
@@ -159,6 +166,9 @@ def act(q, action, data, allocations=None):
         material=data.get('material',q['scenario']['material']); require(material in q['scenario']['material_options'],'Unsupported material requires live engineering review')
         q['revision_history'].append({'revision':q['revision'],'at':now(),'reason':data.get('reason','Quantity/material change'),'snapshot':{k:deepcopy(q[k]) for k in ['quantity','scenario','bom','route','calculation','approvals','requirements','stages']}})
         q['revision']+=1; q['quantity']=number(qty); q.update(build(q['scenario_id'],material)); q['clarification_resolved']=False; q['blocker']=q['scenario']['clarification']; q['allocations']=[]; q['risk_review']={'first_pass':None,'reconciliation':None};q['inspected']=[]
+        from .survey import attach,defaults
+        revised_answers=deepcopy(q.get('survey_answers') or defaults(q['scenario_id']));revised_answers['construction_material']=material
+        attach(q,revised_answers,'Prepared example · revised requirements; initial submission retained in intake')
         if q.get('session_started_at'):bind_session(q,{'id':q['session_id'],'created_at':q['session_started_at']})
         recalculate(q); invalidate(q,1,'Quantity/material revision changed requirements, BOM, route, cost, risk and package');inventory_action='release'
     elif action=='reserve':
@@ -236,6 +246,7 @@ def act(q, action, data, allocations=None):
         v=variance(q['acceptance']['original_cost'],refreshed['pricing_cost'],q['acceptance']['accepted_price'])
         purchase_lines=[l for l in refreshed['lines'] if l['category']=='material' and dec(l['purchase_quantity'])>0]
         q['procurement']={'id':str(uuid4()),'at':now(),'calculation':refreshed,'variance':v,'purchase_lines':purchase_lines,'covered_stock':[a for a in (allocations or []) if a['active']],'status':'awaiting_buyer_review','exception':None,'production_status':'Awaiting production review','required_date':q['schedule']['ready_to_ship'],'refresh_evidence':{'classification':'synthetic_supplier','factor':factor,'note':'Prepared acceptance offer refresh; no live market check.'},'allocation_hash':fingerprint([a for a in (allocations or []) if a['active']])}
+        q['procurement']['agent_rechecks']=[{'agent':a,'classification':'Prepared example','items':[l['id'] for l in purchase_lines if (a=='custom-quote' and 'ADAPTER' in l['id']) or (a=='full-component' and 'GATE' in l['id']) or (a=='individual-parts' and 'ADAPTER' not in l['id'] and 'GATE' not in l['id'])]} for a in ['full-component','individual-parts','custom-quote']]
         q['calculation_runs'].append(deepcopy(refreshed));event(q,'acceptance_cost_check','Accepted price fixed; refreshed cost and buy-only requisition created')
     elif action=='approve_procurement':
         p=q['procurement'];require(p is not None,'Run the acceptance cost check first')

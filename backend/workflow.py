@@ -19,7 +19,7 @@ def review_fingerprint(q,stage):
     from .domain import current_fingerprint
     reviewed=deepcopy(q)
     if reviewed.get('package'):reviewed['package'].pop('release_approval',None)
-    return fingerprint({'inputs':current_fingerprint(reviewed,stage),'corrections':q.get('corrections',[]),'qa':q.get('cost_qa')})
+    return fingerprint({'inputs':current_fingerprint(reviewed,stage),'corrections':[{'id':c['id'],'agent':c['agent'],'input':c['corrected_input']} for c in q.get('corrections',[])],'qa':q.get('cost_qa'),'insurance':q.get('insurance_option'),'material':q.get('material_supplement')})
 
 def available(q,id):
     d=next((d for d in DOCS if d[0]==id),None)
@@ -36,6 +36,7 @@ def approval_check(q,stage):
     from .domain import require
     if not q.get('workflow_version'):return
     require(all(x['opened'] for x in checklist(q,stage)),'Open every required output document for this revision first')
+    if stage==1:require(q.get('material_supplement',{}).get('status')!='pending_review','Review the pending material library supplement first')
     review=q.get('workflow_reviews',{}).get(str(stage),{})
     require(review.get('fingerprint')==review_fingerprint(q,stage) and review.get('confirmed'),'Confirm that you have read the documents and they are correct')
     if stage==4:
@@ -54,11 +55,14 @@ def workflow_state(q,allocations=None):
             if a['id']=='company-research' and q['scenario_id']=='seed':a['status']='Not run · returning client'
             if a['id']=='material-research':a['status']='Conditional · only if material missing'
     from .cost_orchestration import assignments
-    return dict(assignments=assignments(q),steps=STEPS,step=STEPS[stage],agents=agents,checklist=checklist(q,stage),approval_blocker=blocked,can_approve=not blocked,documents=[dict(id=id,title=title,stage=s,creator=creator,available=available(q,id)) for id,title,s,creator in DOCS],review=q.get('workflow_reviews',{}).get(str(stage),{}))
+    from .corrections import PRESETS
+    return dict(correction_preset=PRESETS[q['scenario_id']],assignments=assignments(q),steps=STEPS,step=STEPS[stage],agents=agents,checklist=checklist(q,stage),approval_blocker=blocked,can_approve=not blocked,documents=[dict(id=id,title=title,stage=s,creator=creator,available=available(q,id)) for id,title,s,creator in DOCS],review=q.get('workflow_reviews',{}).get(str(stage),{}))
 
 def workflow_action(q,action,data):
     from .domain import require,actor,event
     q=deepcopy(q);stage=q['stage']
+    from .survey import ensure_survey
+    ensure_survey(q)
     require(q['scenario_id']!='custom','Custom requests require live engineering review')
     if action=='open_document':
         id=data.get('id');require(available(q,id),'Document is not available yet')
@@ -69,6 +73,25 @@ def workflow_action(q,action,data):
         require(all(x['opened'] for x in checklist(q,stage)),'Read all required documents first')
         q.setdefault('workflow_reviews',{})[str(stage)]={'fingerprint':review_fingerprint(q,stage),'confirmed':data.get('confirmed') is True,'role_confirmed':data.get('role_confirmed') is True,'reviewer':actor(q,STEPS[stage]['owner']),'at':now()}
         event(q,'documents_confirmed','Explicit document review at step '+str(stage+1))
+    elif action=='insurance_option':
+        require(stage==5 and q['lifecycle']=='draft','Insurance discussion belongs to draft risk review')
+        require(data.get('option') in ['project','minimal'],'Unknown insurance option')
+        q['insurance_option']=data['option'];event(q,'insurance_discussion',data['option']+' · premium TBD, excluded from quote total')
+    elif action=='draft_material':
+        require(stage==1 and q['lifecycle']=='draft','Material supplement belongs to requirements review')
+        name=data.get('name','').strip();notes=data.get('notes','').strip()
+        require(3<=len(name)<=100 and 10<=len(notes)<=3000,'Provide a material name and evidence notes')
+        q['material_supplement']={'name':name,'notes':notes,'status':'pending_review','classification':'Human input in prepared research template','at':now()}
+        from .fixtures import source
+        q['sources']=[x for x in q['sources'] if x['id']!='material-supplement']+[source('material-supplement','Reviewer material supplement',name+'\n'+notes,'operator_input','Human-supplied material evidence')]
+        event(q,'material_draft','Pending engineering review; no global D9 update')
+    elif action=='approve_material':
+        require(stage==1 and q['lifecycle']=='draft' and q.get('material_supplement',{}).get('status')=='pending_review','No pending material supplement')
+        q['material_supplement'].update(status='approved_for_session_library',reviewer=actor(q,'Engineer'),reviewed_at=now())
+        event(q,'material_review','Explicit approval for quote-scoped library; technical unknowns remain')
+    elif action=='request_correction':
+        from .corrections import rerun
+        return rerun(q,data)
     elif action=='replay_cost_qa':
         from .cost_orchestration import replay
         require(stage==4 and q['lifecycle']=='draft','QA replay belongs to the cost review')

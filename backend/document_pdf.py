@@ -19,3 +19,14 @@ def artifact_pdf(doc,qid,origin):
         story.append(Spacer(1,12))
     SimpleDocTemplate(data,pagesize=A4,title=doc['title'],author='Ivy Hopper Works — fictional demo',leftMargin=45,rightMargin=45).build(story)
     return data.getvalue()
+
+
+def source_record_pdf(db,row):
+    data=BytesIO();styles=getSampleStyleSheet();story=[]
+    for text,style in [('FICTIONAL DEMO COPY · '+db['home'],'Normal'),(row.get('title') or row.get('material') or row.get('company') or db['title'],'Title'),(db['id']+' · row '+str(row['line'])+' · '+db['version'],'Normal')]:
+        story.extend([Paragraph(escape(text),styles[style]),Spacer(1,10)])
+    for key,value in row.items():
+        if key in ('image','id','line','title'):continue
+        story.extend([Paragraph(escape(key.replace('_',' ').title()+': '+str(value)),styles['BodyText']),Spacer(1,8)])
+    SimpleDocTemplate(data,pagesize=A4,title=db['title'],leftMargin=45,rightMargin=45).build(story)
+    return data.getvalue()

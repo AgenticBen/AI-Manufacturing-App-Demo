@@ -54,5 +54,5 @@ def check(client,sid='seed'):
 if __name__=='__main__':
  base=os.environ.get('ARC_TEST_URL','http://127.0.0.1:8011')
  with httpx.Client(base_url=base,headers={'X-Arc-Client':'web'},timeout=90) as c:proof=check(c,sys.argv[1] if len(sys.argv)>1 else 'seed')
- Path('artifacts/visible-workflow-proof.json').write_text(json.dumps(proof,indent=2))
+ Path('artifacts/visible-workflow-'+proof['scenario']+'-proof.json').write_text(json.dumps(proof,indent=2))
  print(json.dumps(proof))

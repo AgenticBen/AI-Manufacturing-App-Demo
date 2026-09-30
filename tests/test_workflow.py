@@ -103,3 +103,69 @@ def test_full_document_gated_flow_remains_exportable_after_release_stamp():
  q=step(q,'respond',{'response':'accepted'});q=step(q,'acceptance_check');q=step(q,'approve_procurement',{'exception_reason':'Fictional test approval'})
  q=step(q,'simulate_email',{'kind':'pm-handoff'})
  assert q['simulated_messages'][-1]['kind']=='pm-handoff'
+
+def test_targeted_correction_preserves_previous_output_and_reopens_review():
+ q=make();q['workflow_version']='2.0'
+ q=step(q,'open_document',{'id':'request-packet'});q=step(q,'confirm_documents',{'confirmed':True})
+ q=step(q,'request_correction',{'agent':'crm-check','reason':'Use the exact fictional client identity.','corrected_input':'Cedar Rapids Seed Co.; D10 row 1.'})
+ assert len(q['corrections'])==1
+ c=q['corrections'][0]
+ assert c['agent']=='crm-check' and c['previous_output'] and c['new_output']
+ assert c['previous_output'][-1]['sections']!=c['new_output'][-1]['sections']
+ assert not q['workflow_reviews'] and not checklist(q,0)[0]['opened']
+ assert q['timeline'][-1]['kind']=='targeted_prepared_rerun'
+ assert q['corrections'][0]['new_output'][0]['reviewed_by']=='Pending human approval'
+ with pytest.raises(DomainError):step(q,'request_correction',{'agent':'cost-qa','reason':'Unreached agent','corrected_input':'no'})
+
+@pytest.mark.parametrize('sid',['seed','grain','feed'])
+def test_every_scenario_artifact_and_bom_citation(sid):
+ from test_domain import walkthrough
+ from backend.demo.catalog import seed_databases
+ from backend.workflow import DOCS
+ from backend.document_pdf import artifact_pdf
+ q=walkthrough(sid);db=next(d for d in seed_databases() if d['id']=='D5')
+ for section,bom in zip(document(q,'bom')['sections'],q['bom']):
+  c=next(c for c in section['citations'] if c.get('database')=='D5')
+  row=db['rows'][c['line']-1]
+  assert row['job']=='Template-'+sid and row['part']==bom['item']
+ for id,*_ in DOCS:
+  doc=document(q,id)
+  assert all(x['citations'] for x in doc['sections'])
+  assert artifact_pdf(doc,q['id'],'https://example.test').startswith(b'%PDF')
+ assert {a['agent'] for a in q['procurement']['agent_rechecks']}=={'full-component','individual-parts','custom-quote'}
+ assert sorted(i for a in q['procurement']['agent_rechecks'] for i in a['items'])==sorted(l['id'] for l in q['procurement']['purchase_lines'])
+
+def test_material_supplement_requires_review_and_invalidates_document_read():
+ q=make();q['stage']=1;q['workflow_version']='2.0'
+ q=step(q,'draft_material',{'name':'Fictional new material','notes':'Reviewer supplied SDS needs engineering confirmation.'})
+ from backend.workflow import approval_check
+ for doc in checklist(q,1):q=step(q,'open_document',{'id':doc['id']})
+ q=step(q,'confirm_documents',{'confirmed':True})
+ with pytest.raises(DomainError,match='pending material'):approval_check(q,1)
+ q=step(q,'approve_material')
+ assert q['material_supplement']['status']=='approved_for_session_library'
+ assert not all(d['opened'] for d in checklist(q,1))
+ assert 'material-supplement' in [s['id'] for s in q['sources']]
+
+def test_insurance_is_placeholder_only_and_cannot_change_issued_quote():
+ q=make();q['stage']=5;price=q['calculation']['selling_price']
+ q=step(q,'insurance_option',{'option':'project'})
+ assert q['calculation']['selling_price']==price
+ assert 'USD TBD' in document(q,'master-risk')['sections'][-1]['text']
+ q['lifecycle']='exported'
+ with pytest.raises(DomainError):step(q,'insurance_option',{'option':'minimal'})
+
+def test_process_map_and_read_only_jump_preserve_real_quote():
+ from fastapi.testclient import TestClient
+ from backend.api import app
+ from unittest.mock import patch
+ from copy import deepcopy
+ c=TestClient(app);m=c.get('/api/process-map').json()
+ assert len(m['steps'])==9 and sum(s['modeled_minutes'] or 0 for s in m['steps'])==90
+ assert c.get('/api/quotes/owned/steps/4').status_code==401
+ c.cookies.set('arc_session','a'*48);q=make();before=deepcopy(q)
+ with patch('backend.api.store.call',return_value={'body':q,'id':q['id'],'version':1}):
+  r=c.get('/api/quotes/owned/steps/4')
+  assert r.status_code==200 and r.json()['stage']==4
+  assert not r.json()['workflow']['can_approve']
+  assert q==before

@@ -41,3 +41,15 @@ def test_each_agent_has_exact_versioned_playbook():
         assert len(client.get('/api/playbooks').json())==22
         assert client.get('/api/playbooks/intake').json()['version']=='2.0'
         assert client.get('/api/playbooks/unknown').status_code==404
+
+def test_past_quotes_open_as_one_page_pdfs():
+    from backend.document_pdf import source_record_pdf
+    from pypdf import PdfReader
+    from io import BytesIO
+    db=next(d for d in seed_databases() if d['id']=='D6')
+    for row in db['rows']:
+        pdf=source_record_pdf(db,row)
+        assert len(PdfReader(BytesIO(pdf)).pages)==1
+    with patch('backend.demo_sources.read_databases',return_value=db):
+        assert client.get('/api/databases/D6/records/D6-001/pdf').content.startswith(b'%PDF')
+        assert client.get('/api/databases/D6/records/unknown/pdf').status_code==404

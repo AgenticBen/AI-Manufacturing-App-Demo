@@ -30,6 +30,7 @@ class Intake(BaseModel):
     event_key:str=Field(min_length=10,max_length=100)
     requested_date:Optional[str]=Field(default=None,max_length=30)
     notes:str=Field(default='',max_length=3000)
+    survey:Optional[dict[str,str]]=None
 
 class Action(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -70,6 +71,8 @@ def safe_record(record):
     record=deepcopy(record);record['body'].pop('mcp_token_hash',None)
     for job in record['body']['jobs']:job.pop('lease',None)
     q=record['body'];clock=datetime.now(timezone.utc)
+    from .survey import ensure_survey
+    ensure_survey(q)
     def elapsed(start,end=None):
         if not start:return None
         seconds=max(0,int(((parse_time(end) if end else clock)-parse_time(start)).total_seconds()))
@@ -82,6 +85,11 @@ def safe_record(record):
 
 @app.get('/api/health')
 def health():return {'status':'ok','runtime':'python','spike_price':price('1000','100')['selling_price'],'persistence':'hosted_supabase','formula_version':'arc-decimal-1.0','runtime_assets':{'logo_light':(Path(__file__).resolve().parent/'assets'/'logo-light.png').is_file(),'logo_dark':(Path(__file__).resolve().parent/'assets'/'logo-dark.png').is_file(),'playbooks':len(list(Path('backend/playbooks').glob('*.md')))>=12}}
+
+@app.get('/api/process-map')
+def overview_process():
+    from .process_map import process_map
+    return process_map()
 
 @app.get('/api/playbooks')
 def playbooks():
@@ -104,8 +112,19 @@ def database_detail(database_id:str):
     from .demo_sources import read_databases
     return read_databases(store,database_id)
 
+@app.get('/api/databases/{database_id}/records/{record_id}/pdf')
+def database_record_pdf(database_id:str,record_id:str):
+    from .demo_sources import read_databases
+    from .document_pdf import source_record_pdf
+    db=read_databases(store,database_id)
+    row=next((r for r in db['rows'] if r['id']==record_id),None)
+    if row is None:raise HTTPException(404,'Record not found')
+    return Response(source_record_pdf(db,row),media_type='application/pdf',headers={'Content-Disposition':'inline; filename="demo-source.pdf"'})
+
 @app.get('/api/catalog')
-def catalog():return {'scenarios':SCENARIOS,'stages':STAGES,'fixture_version':FIXTURE_VERSION,'policy':{'target_margin':'30%','hold':'24 hours','validity':'14 days','escalation':'>5% cost increase OR <25% projected gross margin','tax_freight':'Explicitly excluded'}}
+def catalog():
+    from .survey import schema,defaults
+    return {'survey_sections':schema(),'scenarios':{sid:dict(s,survey=defaults(sid)) for sid,s in SCENARIOS.items()},'stages':STAGES,'fixture_version':FIXTURE_VERSION,'policy':{'target_margin':'30%','hold':'24 hours','validity':'14 days','escalation':'>5% cost increase OR <25% projected gross margin','tax_freight':'Explicitly excluded'}}
 
 @app.post('/api/session')
 def start(request:Request,response:Response):
@@ -172,11 +191,30 @@ def action(qid:str,data:Action,request:Request):
     result=store.save(token,r,data.action,data.event_key,inv,lines,{'revision':q['revision']},shop_rule=shop_rule)
     return safe_record(result)
 
+@app.get('/api/quotes/{qid}/survey/pdf')
+def survey_pdf(qid:str,request:Request):
+    from .survey import ensure_survey
+    from .document_pdf import artifact_pdf
+    q=deepcopy(store.call(session(request),'get',{'id':qid})['body']);ensure_survey(q)
+    doc={'title':'Customer survey & requirements register','classification':q['survey_summary']['classification'],'version':'R'+str(q['revision']),'creator':'Customer intake / salesperson','reviewed_by':'Pending field-by-field engineering confirmation','used_by':'Requirements, design, manufacturing, risk, pricing and PM handoff','sections':[{'text':r['section']+' — '+r['question']+' '+r['value']+' ['+r['status']+']','citations':[{'source':'survey-submission','line':r['line']}]} for r in q['survey_requirements']]}
+    return Response(artifact_pdf(doc,qid,str(request.base_url).rstrip('/')),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="requirements-register.pdf"'})
+
+@app.get('/api/quotes/{qid}/steps/{step}')
+def view_step(qid:str,step:int,request:Request):
+    from .workflow import workflow_state
+    require(0<=step<=8,'Unknown step')
+    r=deepcopy(store.call(session(request),'get',{'id':qid}));q=r['body'];require(q['scenario_id']!='custom','Prepared step previews require a supported scenario')
+    actual=q['stage'];q['stage']=min(step,7);q['preview_stage']=step;q['actual_stage']=actual;q['lifecycle']='reference_preview'
+    result=safe_record(r);result['body']['workflow']['can_approve']=False;result['body']['workflow']['approval_blocker']='Read-only step preview; return to the current step to review and approve.'
+    return result['body']
+
 @app.get('/api/quotes/{qid}/documents/{document_id}/pdf')
-def artifact_pdf(qid:str,document_id:str,request:Request):
+def artifact_pdf(qid:str,document_id:str,request:Request,preview_stage:Optional[int]=None):
     from .documents import document
     from .document_pdf import artifact_pdf
     q=store.call(session(request),'get',{'id':qid})['body']
+    if preview_stage is not None:
+        require(0<=preview_stage<=8,'Unknown preview step');q['stage']=min(preview_stage,7)
     return Response(artifact_pdf(document(q,document_id),qid,str(request.base_url).rstrip('/')),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename="{document_id}-R{q["revision"]}.pdf"'})
 
 @app.get('/api/quotes/{qid}/sources/{source_id}')
@@ -184,6 +222,8 @@ def source_lines(qid:str,source_id:str,request:Request,line:int=1):
     from html import escape
     from fastapi.responses import HTMLResponse
     q=store.call(session(request),'get',{'id':qid})['body']
+    from .survey import ensure_survey
+    ensure_survey(q)
     source=next((s for s in q['sources'] if s['id']==source_id),None)
     if source is None and source_id in ('calculation-current','intake-fields'):
         import json
@@ -193,9 +233,11 @@ def source_lines(qid:str,source_id:str,request:Request,line:int=1):
     return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width"><title>Demo source</title><h1>'+escape(source['title'])+'</h1><p>Fictional demo copy · '+escape(source['revision'])+'</p>'+rows)
 
 @app.get('/api/quotes/{qid}/documents/{document_id}')
-def quote_document(qid:str,document_id:str,request:Request):
+def quote_document(qid:str,document_id:str,request:Request,preview_stage:Optional[int]=None):
     from .documents import document
     q=store.call(session(request),'get',{'id':qid})['body']
+    if preview_stage is not None:
+        require(0<=preview_stage<=8,'Unknown preview step');q['stage']=min(preview_stage,7)
     return document(q,document_id)
 
 @app.get('/api/quotes/{qid}/pdf')

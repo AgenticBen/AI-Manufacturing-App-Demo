@@ -1,14 +1,17 @@
 """Prepared, cited quote artifacts generated using trusted Python state."""
 from .workflow import DOCS,STEPS,available,review_fingerprint
 from .calculations import dec,number,money
+from .fixtures import build
 
 def document(q,id):
     from .domain import require
+    from .survey import ensure_survey
+    ensure_survey(q)
     require(available(q,id),'Document is not available yet')
     spec=next(d for d in DOCS if d[0]==id);sid=q['scenario_id'];si=['seed','grain','feed'].index(sid);sections=[]
     def add(text,db=None,line=1,source=None):
         src=next((s for s in q['sources'] if s['id']==source),None)
-        source_line=3 if source and source.startswith('offer-') and src and len(src['content'].splitlines())>=3 else 2 if source and source.startswith('request-') else 1
+        source_line=3 if source and source.startswith('offer-') and src and len(src['content'].splitlines())>=3 else 2 if source and source.startswith('request-') else line
         if source=='calculation-current' and src:
             field='base_cost' if 'base cost' in text.lower() else 'selling_price' if 'price USD' in text else 'pricing_cost'
             source_line=next((i for i,t in enumerate(src['content'].splitlines(),1) if '"'+field+'"' in t),1)
@@ -18,15 +21,17 @@ def document(q,id):
     if id=='request-packet':
         add(q['intake']['description'],'D11',si*4+1, 'request-'+sid)
         add('Survey: '+q['quantity']+' assemblies; '+q['scenario']['capacity']+'; '+q['scenario']['handled']+'.','D11',si*4+3,'intake-fields')
+        add('Detailed survey: '+str(q['survey_summary']['fields'])+' fields; '+str(q['survey_summary']['needs_confirmation'])+' require confirmation. See the complete requirements register.',source='survey-submission')
         add(('Returning client; past jobs H-101 and H-102.' if sid=='seed' else 'New fictional client; company background requires review.'),'D10',si+1)
     elif id=='client-document':
         add(q['scenario']['name']+' — fictional '+q['scenario']['short']+'. No verified public company page exists for this demo identity.','D12',si+1)
-        for r in q['requirements']:add(r['field'].replace('_',' ')+': '+r['value'],source=r['source_id'])
+        for r in q['requirements']:add((r.get('section','Baseline')+' — '+r.get('question',r['field'].replace('_',' ')))+': '+r['value']+' ['+r['status']+']',line=r.get('line',1),source=r['source_id'])
         add(('v2 · Customer answer confirmed: '+q['scenario']['resolution']) if q.get('clarification_resolved') else 'v1 · Open gap: '+q['scenario']['clarification'],'D11',si*4+4)
     elif id=='material-review':
         add('Handled product: '+q['scenario']['handled']+'. Corn/grain and DDGS entries are reference analogs only; exact product properties require engineering confirmation.','D11',si*4+3)
         add('Organic dust and moisture can affect handling. Do not treat reference dust classes or angles as design values. Confirm sample properties, dust controls and site conditions.','D9',1 if sid!='feed' else 5)
         add('Customer decision needed: confirm the stated environment and any cleaning or moisture exposure before choosing materials or enclosures.','D11',si*4+1)
+        if q.get('material_supplement'):add('Quote-scoped material supplement: '+str(q['material_supplement']),source='material-supplement')
     elif id=='clarification-email':
         add('To: fictional customer purchasing contact. Subject: One clarification bundle for your hopper quote.','D10',si+1)
         add('Please confirm: '+q['scenario']['clarification'],'D12',si+1)
@@ -40,7 +45,7 @@ def document(q,id):
         add('Reference template image includes illustrative equipment outside the quoted scope; controls and powered auxiliaries are not included. AI concept · not an engineering drawing. '+q['scenario']['capacity']+'; '+q['scenario']['material']+'; '+q['scenario']['outlet']+'.','D7',si+1,'drawing-'+sid)
         add('Qualified engineer must verify structure, slope, loads, welds and interface before production.',source='drawing-'+sid)
     elif id=='bom':
-        for i,b in enumerate(q['bom']):add(f"{b['item']} · {b['label']} · {b['spec']} · material {q['scenario']['material']} · {b['per_unit']} {b['unit']} per assembly · {number(dec(b['per_unit'])*dec(q['quantity']))} total · drawing {b['drawing_ref']}",'D5',si*8+i+1,'drawing-'+sid)
+        for i,b in enumerate(q['bom']):add(f"{b['item']} · {b['label']} · {b['spec']} · material {q['scenario']['material']} · {b['per_unit']} {b['unit']} per assembly · {number(dec(b['per_unit'])*dec(q['quantity']))} total · drawing {b['drawing_ref']}",'D5',sum(len(build(x)['bom']) for x in ['seed','grain','feed'][:si])+i+1,'drawing-'+sid)
     elif id=='manufacturing-plan':
         add('Build sequence: legs → cone → body → gate → finish → inspect. Engineer confirms the selected estimating route; PM confirms timeline.','D8',1)
         for i,o in enumerate(q['route']):add(f"{o['operation']} · {o['work_center']} · setup {o['setup_hours']} h/batch · run {o['run_hours']} h/assembly · historical comparison {o.get('history_hours','unknown')} h/assembly · USD {o['loaded_rate']}/h loaded.",'D3',min(i+1,7),o['source_id'])
@@ -57,6 +62,7 @@ def document(q,id):
     elif id=='master-risk':
         for r in q['risks']:add(r['title']+' · '+r['owner']+' · '+r['disposition']+'. '+r['mitigation'],source=r['source_id'])
         add('Handling and site: confirm dust, access, moisture and customer operating conditions. Transport damage: packaging is included, freight excluded; customer confirms shipping arrangements.','D11',si*4+1)
+        add('Insurance discussion: '+q.get('insurance_option','not selected')+'. Premium USD TBD; split to be agreed; excluded from quote total. Coverage and exclusions require broker confirmation.',source='policy-v1')
     elif id=='pricing-decision':
         add('Salesperson-selected target margin '+q['margin']+'; discount '+q['discount']+'; Python price USD '+q['calculation']['selling_price']+'; projected gross margin '+q['calculation']['gross_margin_percent']+'%.',source='calculation-current')
         add('Win likelihood is illustrative from synthetic history; shop load is a modeled shared calendar, not live ERP data.','D6',1,'shop-load-v1')
@@ -76,5 +82,8 @@ def document(q,id):
         if id=='post-acceptance':add('Python cost variance USD '+p['variance']['cost_variance']+' ('+p['variance']['variance_percent']+'%); projected margin '+p['variance']['gross_margin_percent']+'%.',source='policy-v1')
         for l in p['purchase_lines']:add(l['label']+' · buy '+l['purchase_quantity']+' · USD '+l['purchase_cost']+' acquisition cost.',source=l['evidence'][0])
         if id=='pm-handoff':add('Sales → Project manager: add job to project system. Attach approved BOM and manufacturing plan. Production status: '+p['production_status']+'. No project-system sync occurs.',source='route-'+sid)
-    approval=next((a for a in reversed(q['approvals']) if a.get('stage')==spec[2] and a.get('revision')==q['revision'] and a.get('decision')=='approved'),None)
-    return dict(id=id,title=spec[1],stage=spec[2],creator=spec[3],version=f"R{q['revision']}"+(' · v2' if id=='client-document' and q.get('clarification_resolved') else ''),classification='Prepared example',created_at=q['created_at'],reviewed_by=approval['reviewer'] if approval else 'Pending human approval',reviewed_at=approval['at'] if approval else None,stale=q['stages'][min(spec[2],7)].get('reason') if q['stages'][min(spec[2],7)]['status']=='invalidated' else None,used_by='Next step and downstream review' if spec[2]<7 else 'Sales / Procurement / Project manager',sections=sections)
+    for correction in q.get('corrections',[]):
+        if id in correction['output_ids']:
+            add('Prepared targeted rerun — reviewer correction: '+correction['corrected_input']+'. Human-supplied input; review against the cited source before accepting. Other agents were not rerun.',source=correction['id'])
+    approval=next((a for a in reversed(q['approvals']) if a.get('stage')==spec[2] and a.get('revision')==q['revision'] and a.get('decision')=='approved' and q['stages'][min(spec[2],7)]['status']=='approved'),None)
+    return dict(id=id,title=spec[1],stage=spec[2],creator=spec[3],version=f"R{q['revision']}"+(' · correction '+str(sum(id in c['output_ids'] for c in q.get('corrections',[]))) if any(id in c['output_ids'] for c in q.get('corrections',[])) else '')+(' · v2' if id=='client-document' and q.get('clarification_resolved') else ''),classification='Prepared example',created_at=q['created_at'],reviewed_by=approval['reviewer'] if approval else 'Pending human approval',reviewed_at=approval['at'] if approval else None,stale=q['stages'][min(spec[2],7)].get('reason') if not approval else None,used_by='Next step and downstream review' if spec[2]<7 else 'Sales / Procurement / Project manager',sections=sections)
