@@ -43,6 +43,10 @@ def recalculate(q, allocations=None):
     q['pricing_options']=pricing_options(q)
     q['calculation']['id']=str(uuid4()); q['calculation']['created_at']=now()
     q['calculation_runs'].append(deepcopy(q['calculation']))
+    import json
+    for sid,title,content in [('calculation-current','Current Python calculation record',json.dumps(q['calculation'],indent=2)),('intake-fields','Current quote input fields',json.dumps({'quantity':q['quantity'],'scenario':q['scenario_id'],'requirements':q['requirements']},indent=2))]:
+        record=source(sid,title,content,'python_record' if sid=='calculation-current' else 'synthetic_customer','Numbered quote record lines')
+        q['sources']=[x for x in q['sources'] if x['id']!=sid]+[record]
     q['schedule_inputs']=[{'id':'drawing','dependencies':[],'days':'2'},{'id':'materials','dependencies':[],'days':q['scenario']['lead_days']},{'id':'fabrication','dependencies':['drawing','materials'],'days':number(sum(dec(x['hours']) for x in q['calculation']['lines'] if x['category']=='operation')/dec('8'))},{'id':'outside-coating','dependencies':['fabrication'],'days':'10' if q['scenario']['material']=='Galvanized carbon steel' else '0'},{'id':'ready-to-ship','dependencies':['outside-coating'],'days':'1'}]
     q['schedule_origin']=central_today().isoformat()
     q['schedule']=schedule(q['schedule_inputs'],q['schedule_origin'])

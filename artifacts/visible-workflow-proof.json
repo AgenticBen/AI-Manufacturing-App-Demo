@@ -1,0 +1,49 @@
+{
+  "scenario": "seed",
+  "quote": "bed4a030-6846-485f-9cee-66e7bee23d5b",
+  "stages": [
+    {
+      "stage": 1,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 2,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 3,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 4,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 5,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 6,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 7,
+      "locked_before_review": true,
+      "approved_after_review": true
+    },
+    {
+      "stage": 8,
+      "locked_before_review": true,
+      "approved_after_review": true
+    }
+  ],
+  "pdfs": 18,
+  "buy_only": true,
+  "no_real_messages": true
+}

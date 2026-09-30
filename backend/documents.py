@@ -9,12 +9,15 @@ def document(q,id):
     def add(text,db=None,line=1,source=None):
         src=next((s for s in q['sources'] if s['id']==source),None)
         source_line=3 if source and source.startswith('offer-') and src and len(src['content'].splitlines())>=3 else 2 if source and source.startswith('request-') else 1
+        if source=='calculation-current' and src:
+            field='base_cost' if 'base cost' in text.lower() else 'selling_price' if 'price USD' in text else 'pricing_cost'
+            source_line=next((i for i,t in enumerate(src['content'].splitlines(),1) if '"'+field+'"' in t),1)
         sections.append(dict(text=text,citations=([dict(database=db,line=line)] if db else [])+([dict(source=source,line=source_line)] if source else [])))
     if id in ['working-cost','completed-cost'] and q.get('cost_qa'):
         for e in q['cost_qa']['events']:add('Prepared QA replay: '+e['agent']+' → '+e['action']+'. '+e['detail'],source='offer-fastener')
     if id=='request-packet':
         add(q['intake']['description'],'D11',si*4+1, 'request-'+sid)
-        add('Survey: '+q['quantity']+' assemblies; '+q['scenario']['capacity']+'; '+q['scenario']['handled']+'.','D11',si*4+3,'request-'+sid)
+        add('Survey: '+q['quantity']+' assemblies; '+q['scenario']['capacity']+'; '+q['scenario']['handled']+'.','D11',si*4+3,'intake-fields')
         add(('Returning client; past jobs H-101 and H-102.' if sid=='seed' else 'New fictional client; company background requires review.'),'D10',si+1)
     elif id=='client-document':
         add(q['scenario']['name']+' — fictional '+q['scenario']['short']+'. No verified public company page exists for this demo identity.','D12',si+1)
@@ -50,12 +53,12 @@ def document(q,id):
             else:add(f"{l['label']} · USD {l['total']} · Python computed {l['category']} cost.",source=l['evidence'][0])
         add('Custom adapter: awaiting supplier quote in a live deployment. The demo uses a prepared estimating allowance; no supplier contact.', 'D2',6)
         add('Inventory holds: '+('; '.join(a['item']+' '+a['quantity']+' '+a['status'] for a in q.get('allocations',[]) if a.get('active')) or 'none placed')+'. Holds require the explicit Reserve control.',source='inventory-ledger')
-        if id!='working-cost':add('Python base cost USD '+q['calculation']['base_cost']+'; contingency USD '+q['calculation']['contingency']+'; pricing cost USD '+q['calculation']['pricing_cost']+'. Calculation '+q['calculation']['id']+'.',source='policy-v1')
+        if id!='working-cost':add('Python base cost USD '+q['calculation']['base_cost']+'; contingency USD '+q['calculation']['contingency']+'; pricing cost USD '+q['calculation']['pricing_cost']+'. Calculation '+q['calculation']['id']+'.',source='calculation-current')
     elif id=='master-risk':
         for r in q['risks']:add(r['title']+' · '+r['owner']+' · '+r['disposition']+'. '+r['mitigation'],source=r['source_id'])
         add('Handling and site: confirm dust, access, moisture and customer operating conditions. Transport damage: packaging is included, freight excluded; customer confirms shipping arrangements.','D11',si*4+1)
     elif id=='pricing-decision':
-        add('Salesperson-selected target margin '+q['margin']+'; discount '+q['discount']+'; Python price USD '+q['calculation']['selling_price']+'; projected gross margin '+q['calculation']['gross_margin_percent']+'%.',source='policy-v1')
+        add('Salesperson-selected target margin '+q['margin']+'; discount '+q['discount']+'; Python price USD '+q['calculation']['selling_price']+'; projected gross margin '+q['calculation']['gross_margin_percent']+'%.',source='calculation-current')
         add('Win likelihood is illustrative from synthetic history; shop load is a modeled shared calendar, not live ERP data.','D6',1,'shop-load-v1')
     elif id=='customer-quote':
         p=q.get('package')

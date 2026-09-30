@@ -16,3 +16,13 @@ Checkpoint: `5a1ed8c` pushed to https://github.com/AgenticBen/AI-Manufacturing-A
 Baseline: 32 original Python tests pass; TypeScript passes. Production remains https://agentic-arc-manufacturing.vercel.app until preview verification and P0 promotion.
 
 No real emails, purchases, provider sync, account settings changes or recorded AI runs. Demo prices are not supplier website prices.
+
+## P0 acceptance record
+
+- Code checkpoints: `d7b1631` (sources), `f4a6b6f` (visible workflow), `b11b7da` (export/mobile regression fixes).
+- 45 Python tests pass, including all 32 original tests; TypeScript and Vercel production build pass.
+- Hosted seed HTTP walkthrough passes all eight locked-before-review / approved-after-review gates, customer PDF, acceptance recheck, buy-only requisition, explicit simulated messages and all 18 artifact PDFs. Evidence: `artifacts/visible-workflow-proof.json`.
+- Browser checks at 1440 px and 390 px: document trail, source row highlighting, exact instructions, disabled/unlocked approval and full-screen mobile PDF-style sheet. Screenshots: `artifacts/p0-gate-desktop.png`, `artifacts/p0-document-mobile.png`.
+- Existing private session/quote/event/lot/reservation tables deny direct access; wrong server capability denied; authorized isolated session succeeds.
+- Publication scan: no credential-shaped strings, PII or oversized files. `.env.example` manually verified as placeholders only.
+- Citation refinement: computed totals link to current Python calculation records; quote inputs have numbered evidence.

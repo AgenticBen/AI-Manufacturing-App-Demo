@@ -185,6 +185,9 @@ def source_lines(qid:str,source_id:str,request:Request,line:int=1):
     from fastapi.responses import HTMLResponse
     q=store.call(session(request),'get',{'id':qid})['body']
     source=next((s for s in q['sources'] if s['id']==source_id),None)
+    if source is None and source_id in ('calculation-current','intake-fields'):
+        import json
+        source={'title':'Current quote record','revision':'R'+str(q['revision']),'content':json.dumps(q['calculation'] if source_id=='calculation-current' else {'quantity':q['quantity'],'requirements':q['requirements']},indent=2)}
     if source is None:raise HTTPException(404,'Source not found')
     rows=''.join('<p'+(' style="background:#fff0bd"' if i==line else '')+'>'+str(i)+': '+escape(t)+'</p>' for i,t in enumerate(source['content'].split('\n'),1))
     return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width"><title>Demo source</title><h1>'+escape(source['title'])+'</h1><p>Fictional demo copy · '+escape(source['revision'])+'</p>'+rows)
