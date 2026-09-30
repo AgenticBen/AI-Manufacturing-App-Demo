@@ -27,3 +27,17 @@ def test_unknown_and_unavailable_sources():
         assert client.get('/api/databases/D99').status_code==404
     with patch('backend.demo_sources.httpx.get',side_effect=__import__('httpx').ConnectError('offline')):
         assert client.get('/api/databases').status_code==503
+
+def test_each_agent_has_exact_versioned_playbook():
+    from backend.demo.agents import agent_records
+    from pathlib import Path
+    records=agent_records()
+    assert len(records)==22
+    for r in records:
+        assert r['text']==Path('backend/playbooks/agent-'+r['id']+'.md').read_text()
+        assert all(d in {'D'+str(i) for i in range(1,14)} for d in r['databases'])
+        assert all(label in r['text'] for label in ['## Inputs','## Allowed databases','## Allowed tools','## Output fields','## Human check','## Failure behavior'])
+    with patch('backend.demo_sources.read_databases',return_value={'rows':records}):
+        assert len(client.get('/api/playbooks').json())==22
+        assert client.get('/api/playbooks/intake').json()['version']=='2.0'
+        assert client.get('/api/playbooks/unknown').status_code==404

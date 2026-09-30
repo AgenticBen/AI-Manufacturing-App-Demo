@@ -74,12 +74,25 @@ def safe_record(record):
         if not start:return None
         seconds=max(0,int(((parse_time(end) if end else clock)-parse_time(start)).total_seconds()))
         return f'{seconds//3600}h {(seconds%3600)//60}m {seconds%60}s'
+    from .workflow import workflow_state
+    if q['scenario_id']!='custom':q['workflow']=workflow_state(q)
     q['elapsed_quote_time']=elapsed(q['created_at']);q['clock_as_of']=clock.isoformat()
     for stage in q['stages']:stage['elapsed']=elapsed(stage.get('entered_at'),stage.get('approved_at'))
     return record
 
 @app.get('/api/health')
-def health():return {'status':'ok','runtime':'python','spike_price':price('1000','100')['selling_price'],'persistence':'hosted_supabase','formula_version':'arc-decimal-1.0','runtime_assets':{'logo_light':(Path(__file__).resolve().parent/'assets'/'logo-light.png').is_file(),'logo_dark':(Path(__file__).resolve().parent/'assets'/'logo-dark.png').is_file(),'playbooks':len(list(Path('backend/playbooks').glob('*.md')))==12}}
+def health():return {'status':'ok','runtime':'python','spike_price':price('1000','100')['selling_price'],'persistence':'hosted_supabase','formula_version':'arc-decimal-1.0','runtime_assets':{'logo_light':(Path(__file__).resolve().parent/'assets'/'logo-light.png').is_file(),'logo_dark':(Path(__file__).resolve().parent/'assets'/'logo-dark.png').is_file(),'playbooks':len(list(Path('backend/playbooks').glob('*.md')))>=12}}
+
+@app.get('/api/playbooks')
+def playbooks():
+    from .demo_sources import read_databases
+    return read_databases(store,'D13')['rows']
+
+@app.get('/api/playbooks/{playbook_id}')
+def playbook(playbook_id:str):
+    record=next((x for x in playbooks() if x['id']==playbook_id),None)
+    if record is None:raise HTTPException(404,'Playbook not found')
+    return record
 
 @app.get('/api/databases')
 def databases():
@@ -119,7 +132,7 @@ def quotes(request:Request):
 
 @app.post('/api/quotes')
 def create(data:Intake,request:Request):
-    token=session(request);info=store.call(token,'session_info');q=bind_session(create_quote(data.model_dump()),info);q['shop_rules']=store.call(token,'rules');record=store.call(token,'create',{'id':q['id'],'event_key':data.event_key,'body':q});return safe_record(record)
+    token=session(request);info=store.call(token,'session_info');q=bind_session(create_quote(data.model_dump()),info);q['workflow_version']='2.0';q['shop_rules']=store.call(token,'rules');record=store.call(token,'create',{'id':q['id'],'event_key':data.event_key,'body':q});return safe_record(record)
 
 @app.get('/api/quotes/{qid}')
 def get_quote(qid:str,request:Request):
@@ -158,6 +171,29 @@ def action(qid:str,data:Action,request:Request):
     q.setdefault('action_keys',{})[data.event_key]=action_hash;r['body']=q
     result=store.save(token,r,data.action,data.event_key,inv,lines,{'revision':q['revision']},shop_rule=shop_rule)
     return safe_record(result)
+
+@app.get('/api/quotes/{qid}/documents/{document_id}/pdf')
+def artifact_pdf(qid:str,document_id:str,request:Request):
+    from .documents import document
+    from .document_pdf import artifact_pdf
+    q=store.call(session(request),'get',{'id':qid})['body']
+    return Response(artifact_pdf(document(q,document_id),qid,str(request.base_url).rstrip('/')),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename="{document_id}-R{q["revision"]}.pdf"'})
+
+@app.get('/api/quotes/{qid}/sources/{source_id}')
+def source_lines(qid:str,source_id:str,request:Request,line:int=1):
+    from html import escape
+    from fastapi.responses import HTMLResponse
+    q=store.call(session(request),'get',{'id':qid})['body']
+    source=next((s for s in q['sources'] if s['id']==source_id),None)
+    if source is None:raise HTTPException(404,'Source not found')
+    rows=''.join('<p'+(' style="background:#fff0bd"' if i==line else '')+'>'+str(i)+': '+escape(t)+'</p>' for i,t in enumerate(source['content'].split('\n'),1))
+    return HTMLResponse('<!doctype html><meta name="viewport" content="width=device-width"><title>Demo source</title><h1>'+escape(source['title'])+'</h1><p>Fictional demo copy · '+escape(source['revision'])+'</p>'+rows)
+
+@app.get('/api/quotes/{qid}/documents/{document_id}')
+def quote_document(qid:str,document_id:str,request:Request):
+    from .documents import document
+    q=store.call(session(request),'get',{'id':qid})['body']
+    return document(q,document_id)
 
 @app.get('/api/quotes/{qid}/pdf')
 def pdf(qid:str,request:Request):

@@ -82,6 +82,8 @@ def can_approve(q,stage, allocations=None):
     require(q['stage']==stage,'Review the current stage first')
     require(all(s['status']=='approved' for s in q['stages'][:stage]),'Upstream approvals are required')
     if q['mode']=='live_mcp': require(any(j['stage']==stage and j['revision']==q['revision'] and j['state']=='succeeded' for j in q['jobs']),'Waiting for the active MCP client to submit a valid proposal')
+    from .workflow import approval_check
+    approval_check(q,stage)
     if stage==0: require('request-'+q['scenario_id'] in q['inspected'],'Inspect the request source and customer identity first')
     if stage>=1: require(q.get('clarification_resolved'),'Resolve the customer/engineering clarification before approving the baseline')
     if stage>=4:
@@ -103,6 +105,9 @@ def package(q):
 
 def act(q, action, data, allocations=None):
     """Mutates a copy, then caller persists with version CAS and inventory atomically."""
+    if action in ('open_document','confirm_documents','simulate_email','replay_cost_qa'):
+        from .workflow import workflow_action
+        return workflow_action(q,action,data)
     q=deepcopy(q); inventory_action=None; reserve_lines=[]
     require(action in ['inspect','verify','resolve','approve','reject_stage','revise','reserve','release','refresh','risk_first','risk_reconcile','risk_dispose','pricing','preview','export','respond','acceptance_check','approve_procurement','expire','attach_source','route_choice','route_override','reject_substitution'],'Unknown action')
     if q['lifecycle'] in ('accepted','rejected','expired'):
