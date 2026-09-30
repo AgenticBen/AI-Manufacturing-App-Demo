@@ -78,3 +78,28 @@ def test_qa_replay_rejects_pack_error_and_reruns_only_responsible_agent():
  assert qa['events'][2]['agent']=='supervisor'
  assert qa['events'][3]['agent']=='individual-parts'
  assert len([e for e in q['timeline'] if e['kind']=='cost_qa_replay'])==5
+
+def test_full_document_gated_flow_remains_exportable_after_release_stamp():
+ q=make();q['workflow_version']='2.0'
+ q=step(q,'inspect',{'source_id':'request-seed'})
+ for stage in range(8):
+  if stage==1:q=step(step(q,'inspect',{'source_id':'clarification-seed'}),'resolve',{'confirmed':True})
+  if stage==4:
+   q=step(q,'replay_cost_qa')
+   for line in q['calculation']['lines']:
+    for source in line['evidence']:q=step(q,'inspect',{'source_id':source})
+    q=step(q,'verify',{'line_id':line['id'],'confirmed':True})
+  if stage==5:
+   q=step(step(q,'risk_first'),'risk_reconcile')
+   for risk in q['risks']:
+    if risk['disposition']=='open':q=step(q,'risk_dispose',{'risk_id':risk['id'],'disposition':'qualified'})
+  if stage==7:q=step(q,'preview')
+  for d in checklist(q,stage):q=step(q,'open_document',{'id':d['id']})
+  q=step(q,'confirm_documents',{'confirmed':True,'role_confirmed':True})
+  q=step(q,'approve',{'stage':stage})
+ q=step(q,'simulate_email',{'kind':'customer-quote'})
+ q=step(q,'export')
+ assert q['lifecycle']=='exported'
+ q=step(q,'respond',{'response':'accepted'});q=step(q,'acceptance_check');q=step(q,'approve_procurement',{'exception_reason':'Fictional test approval'})
+ q=step(q,'simulate_email',{'kind':'pm-handoff'})
+ assert q['simulated_messages'][-1]['kind']=='pm-handoff'

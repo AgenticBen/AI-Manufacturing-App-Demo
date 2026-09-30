@@ -17,7 +17,9 @@ DOCS=[('request-packet','Request packet',0,'intake'),('client-document','Client 
 
 def review_fingerprint(q,stage):
     from .domain import current_fingerprint
-    return fingerprint({'inputs':current_fingerprint(q,stage),'corrections':q.get('corrections',[]),'qa':q.get('cost_qa')})
+    reviewed=deepcopy(q)
+    if reviewed.get('package'):reviewed['package'].pop('release_approval',None)
+    return fingerprint({'inputs':current_fingerprint(reviewed,stage),'corrections':q.get('corrections',[]),'qa':q.get('cost_qa')})
 
 def available(q,id):
     d=next((d for d in DOCS if d[0]==id),None)
