@@ -81,6 +81,16 @@ def safe_record(record):
 @app.get('/api/health')
 def health():return {'status':'ok','runtime':'python','spike_price':price('1000','100')['selling_price'],'persistence':'hosted_supabase','formula_version':'arc-decimal-1.0','runtime_assets':{'logo_light':(Path(__file__).resolve().parent/'assets'/'logo-light.png').is_file(),'logo_dark':(Path(__file__).resolve().parent/'assets'/'logo-dark.png').is_file(),'playbooks':len(list(Path('backend/playbooks').glob('*.md')))==12}}
 
+@app.get('/api/databases')
+def databases():
+    from .demo_sources import read_databases
+    return read_databases(store)
+
+@app.get('/api/databases/{database_id}')
+def database_detail(database_id:str):
+    from .demo_sources import read_databases
+    return read_databases(store,database_id)
+
 @app.get('/api/catalog')
 def catalog():return {'scenarios':SCENARIOS,'stages':STAGES,'fixture_version':FIXTURE_VERSION,'policy':{'target_margin':'30%','hold':'24 hours','validity':'14 days','escalation':'>5% cost increase OR <25% projected gross margin','tax_freight':'Explicitly excluded'}}
 

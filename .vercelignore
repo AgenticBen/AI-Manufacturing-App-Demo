@@ -12,3 +12,7 @@ PRD
 artifacts
 fixtures
 # Runtime assets MUST remain included: public/assets/*.png, backend/assets/*.png and backend/playbooks/*.md.
+output
+review
+tmp
+Astra Prompt
